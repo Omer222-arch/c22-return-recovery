@@ -1,273 +1,276 @@
+"""
+RecoverIQ application entry point.
 
-import json
+Member 4: Business, QA and Delivery Lead.
+
+This module exposes the existing API through a production-oriented
+FastAPI application entry point.
+
+Run locally:
+    python -m uvicorn backend.main:app --host 127.0.0.1 --port 8080
+
+Existing compatibility entry point:
+    python -m uvicorn backend.api:app --host 127.0.0.1 --port 8080
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import time
+import uuid
 from pathlib import Path
-from threading import Lock
-from typing import Literal
+from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from backend.validation import validate_lots
-from backend.proposals import (
-    list_proposals,
-    create_proposal,
-    update_proposal_status,
-    delete_proposal,
-)
-from backend.outcomes import (
-    list_outcomes,
-    create_outcome,
-    calculate_variance,
-    delete_outcome,
-)
-
-app = FastAPI(
-    title="ReCoverIQ API",
-    description="Data validation, recovery lots, proposals, and outcomes",
-    version="1.1.0",
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Persistent storage for recovery lots.
-DATA_DIR = Path(__file__).resolve().parent / "data"
-LOTS_FILE = DATA_DIR / "lots.json"
-LOTS_LOCK = Lock()
+from backend.api import app as existing_app
 
 
-class LotInput(BaseModel):
-    lot_id: str
-    units: int | None = Field(default=None, ge=1)
-    inspection: Literal["approved", "pending", "rejected"] | None
-    refurbishment_inr: float | None = Field(default=None, ge=0)
-    handling_inr: float | None = Field(default=None, ge=0)
-    resale_price_inr: float | None = Field(default=None, ge=0)
-    scrap_recovery_inr: float | None = Field(default=None, ge=0)
+logger = logging.getLogger("recoveriq.api")
+
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
 
 
-class LotsInput(BaseModel):
-    lots: list[dict]
+app: FastAPI = existing_app
 
 
-class ProposalInput(BaseModel):
-    lot_id: str
-    proposed_route: Literal["refurbish", "resale", "scrap"]
-    status: Literal[
-        "draft", "pending_review", "approved", "rejected"
-    ] = "draft"
-    expected_recovery_inr: float | None = Field(default=None, ge=0)
-    notes: str | None = None
-
-
-class ProposalStatusInput(BaseModel):
-    status: Literal[
-        "draft", "pending_review", "approved", "rejected"
-    ]
-
-
-class OutcomeInput(BaseModel):
-    proposal_id: str
-    actual_recovery_inr: float | None = Field(default=None, ge=0)
-    notes: str | None = None
-
-
-def read_lots():
-    """Read persisted lots, or return an empty list if none exist."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-    if not LOTS_FILE.exists():
-        return []
-
-    try:
-        with LOTS_LOCK:
-            with LOTS_FILE.open("r", encoding="utf-8") as file:
-                lots = json.load(file)
-
-        if not isinstance(lots, list):
-            raise ValueError("Stored lots must be a JSON array.")
-
-        result = validate_lots(lots)
-        if not result["valid"]:
-            raise ValueError("Stored lots failed validation.")
-
-        return result["lots"]
-
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Unable to read saved lots: {exc}",
-        ) from exc
-
-
-def write_lots(lots):
-    """Validate and safely persist the complete lot dataset."""
-    result = validate_lots(lots)
-
-    if not result["valid"]:
-        raise HTTPException(
-            status_code=422,
-            detail=result["issues"],
-        )
-
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    temporary_file = LOTS_FILE.with_suffix(".tmp")
-
-    try:
-        with LOTS_LOCK:
-            with temporary_file.open("w", encoding="utf-8") as file:
-                json.dump(
-                    result["lots"],
-                    file,
-                    indent=2,
-                    ensure_ascii=False,
-                )
-
-            temporary_file.replace(LOTS_FILE)
-
-    except OSError as exc:
-        raise HTTPException(
-            status_code=500,
-            detail="Unable to save recovery lots.",
-        ) from exc
-
-    return result["lots"]
-
-
-@app.get("/")
-def health_check():
-    return {"app": "ReCoverIQ", "status": "running"}
-
-
-# ---------- Data validation ----------
-
-@app.post("/api/validate")
-def validate_data(payload: dict):
-    records = payload.get("records", payload)
-    lots = records.get("lots", []) if isinstance(records, dict) else records
-
-    if not isinstance(lots, list):
-        raise HTTPException(
-            status_code=422,
-            detail="Expected a list of lots.",
-        )
-
-    return validate_lots(lots)
-
-
-# ---------- Recovery lots ----------
-
-@app.get("/api/lots")
-def get_lots():
-    """Return the saved recovery lots."""
-    return read_lots()
-
-
-@app.put("/api/lots")
-def put_lots(payload: LotsInput):
-    """Validate and replace the saved recovery lot dataset."""
-    return write_lots(payload.lots)
-
-
-# ---------- Proposals ----------
-
-@app.get("/api/proposals")
-def get_proposals():
-    return list_proposals()
-
-
-@app.post("/api/proposals", status_code=201)
-def post_proposal(payload: ProposalInput):
-    try:
-        return create_proposal(payload.model_dump())
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-
-
-@app.patch("/api/proposals/{proposal_id}/status")
-def patch_proposal_status(
-    proposal_id: str,
-    payload: ProposalStatusInput,
+@app.middleware("http")
+async def request_logging_middleware(
+    request: Request,
+    call_next: Any,
 ):
-    try:
-        return update_proposal_status(proposal_id, payload.status)
-    except KeyError:
-        raise HTTPException(
-            status_code=404,
-            detail="Proposal not found.",
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+    """Log requests and attach a reference ID to the response."""
 
-@app.delete("/api/proposals/{proposal_id}")
-def remove_proposal(proposal_id: str):
+    reference_id = str(uuid.uuid4())
+    request.state.reference_id = reference_id
+
+    started_at = time.perf_counter()
+
     try:
-        if not delete_proposal(proposal_id):
-            raise HTTPException(
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = reference_id
+
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        logger.info(
+            "request_id=%s method=%s path=%s status=%s duration_ms=%.2f",
+            reference_id,
+            request.method,
+            request.url.path,
+            response.status_code,
+            elapsed_ms,
+        )
+
+        return response
+
+    except Exception:
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        logger.exception(
+            "request_id=%s method=%s path=%s status=500 duration_ms=%.2f",
+            reference_id,
+            request.method,
+            request.url.path,
+            elapsed_ms,
+        )
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": {
+                    "code": "INTERNAL_SERVER_ERROR",
+                    "message": "An unexpected server error occurred.",
+                    "hint": "Retry the request. If the problem persists, "
+                    "provide the reference ID to the project team.",
+                    "ref": reference_id,
+                }
+            },
+            headers={"X-Request-ID": reference_id},
+        )
+
+
+def _error_response(
+    request: Request,
+    *,
+    status_code: int,
+    code: str,
+    message: str,
+    hint: str,
+    details: Any = None,
+) -> JSONResponse:
+    """Create a consistent JSON error envelope."""
+
+    reference_id = getattr(request.state, "reference_id", str(uuid.uuid4()))
+    error: dict[str, Any] = {
+        "code": code,
+        "message": message,
+        "hint": hint,
+        "ref": reference_id,
+    }
+
+    if details is not None:
+        error["details"] = details
+
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": error},
+        headers={"X-Request-ID": reference_id},
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(
+    request: Request,
+    exc: StarletteHTTPException,
+) -> JSONResponse:
+    """Return a standard JSON envelope for HTTP errors."""
+
+    if exc.status_code == 404:
+        path = request.url.path
+
+        if path.startswith("/api/"):
+            return _error_response(
+                request,
                 status_code=404,
-                detail="Proposal not found.",
+                code="API_NOT_FOUND",
+                message="The requested API endpoint was not found.",
+                hint="Check the endpoint path and HTTP method.",
             )
 
-        return {
-            "deleted": True,
-            "proposal_id": proposal_id,
+        return _error_response(
+            request,
+            status_code=404,
+            code="NOT_FOUND",
+            message="The requested resource was not found.",
+            hint="Check the URL and try again.",
+        )
+
+    return _error_response(
+        request,
+        status_code=exc.status_code,
+        code="HTTP_ERROR",
+        message=str(exc.detail),
+        hint="Check the request and try again.",
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError,
+) -> JSONResponse:
+    """Return a consistent response for invalid request data."""
+
+    details = [
+        {
+            "location": list(error.get("loc", [])),
+            "message": error.get("msg", "Invalid value"),
+            "type": error.get("type", "validation_error"),
         }
+        for error in exc.errors()
+    ]
 
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail=str(exc),
+    return _error_response(
+        request,
+        status_code=422,
+        code="VALIDATION_ERROR",
+        message="The request contains invalid or missing fields.",
+        hint="Review the reported fields and correct the request.",
+        details=details,
+    )
+
+
+@app.exception_handler(Exception)
+async def unexpected_exception_handler(
+    request: Request,
+    exc: Exception,
+) -> JSONResponse:
+    """Handle unexpected application errors without exposing internals."""
+
+    reference_id = getattr(request.state, "reference_id", "unavailable")
+    logger.exception(
+        "Unhandled application exception; request_id=%s",
+        reference_id,
+    )
+
+    return _error_response(
+        request,
+        status_code=500,
+        code="INTERNAL_SERVER_ERROR",
+        message="An unexpected server error occurred.",
+        hint="Retry the request and provide the reference ID if the problem persists.",
+    )
+
+
+FRONTEND_DIST = (
+    Path(__file__).resolve().parent.parent / "frontend" / "dist"
+)
+
+if os.getenv("SERVE_FRONTEND", "false").lower() == "true":
+    if not FRONTEND_DIST.is_dir():
+        logger.warning(
+            "SERVE_FRONTEND is enabled, but frontend/dist does not exist: %s",
+            FRONTEND_DIST,
         )
-    if not delete_proposal(proposal_id):
-        raise HTTPException(
-            status_code=404,
-            detail="Proposal not found.",
-        )
+    else:
+        from fastapi.responses import FileResponse
+        from fastapi.staticfiles import StaticFiles
 
-    return {"deleted": True, "proposal_id": proposal_id}
+        assets_dir = FRONTEND_DIST / "assets"
 
+        if assets_dir.is_dir():
+            app.mount(
+                "/assets",
+                StaticFiles(directory=assets_dir),
+                name="frontend-assets",
+            )
 
-# ---------- Outcomes ----------
+        @app.get("/{frontend_path:path}", include_in_schema=False)
+        async def serve_frontend(frontend_path: str):
+            """Serve frontend files and fall back to index.html for app routes."""
 
-@app.get("/api/outcomes")
-def get_outcomes():
-    return list_outcomes()
+            if frontend_path == "api" or frontend_path.startswith("api/"):
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "error": {
+                            "code": "API_NOT_FOUND",
+                            "message": "The requested API endpoint was not found.",
+                            "hint": "Check the endpoint path and HTTP method.",
+                            "ref": str(uuid.uuid4()),
+                        }
+                    },
+                )
 
+            requested_file = (FRONTEND_DIST / frontend_path).resolve()
 
-@app.post("/api/outcomes", status_code=201)
-def post_outcome(payload: OutcomeInput):
-    try:
-        return create_outcome(payload.model_dump())
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+            try:
+                requested_file.relative_to(FRONTEND_DIST.resolve())
+            except ValueError:
+                return FileResponse(FRONTEND_DIST / "index.html")
 
+            if requested_file.is_file():
+                return FileResponse(requested_file)
 
-@app.get("/api/proposals/{proposal_id}/variance")
-def get_variance(proposal_id: str):
-    try:
-        return calculate_variance(proposal_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=404,
-            detail="Proposal not found.",
-        )
+            index_file = FRONTEND_DIST / "index.html"
 
+            if index_file.is_file():
+                return FileResponse(index_file)
 
-@app.delete("/api/outcomes/{outcome_id}")
-def remove_outcome(outcome_id: str):
-    if not delete_outcome(outcome_id):
-        raise HTTPException(
-            status_code=404,
-            detail="Outcome not found.",
-        )
-
-    return {"deleted": True, "outcome_id": outcome_id}
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "error": {
+                        "code": "FRONTEND_NOT_FOUND",
+                        "message": "The requested frontend page was not found.",
+                        "hint": "Return to the application home page.",
+                        "ref": str(uuid.uuid4()),
+                    }
+                },
+            )
