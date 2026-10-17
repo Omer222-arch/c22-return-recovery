@@ -137,10 +137,16 @@ def evaluate_route(
     allowed = cfg.get("allowed_conditions")
     if allowed is not None and str(lot["condition"]).lower() not in {c.lower() for c in allowed}:
         return _blocked(route, f"{label} blocked: condition '{lot['condition']}' is not permitted for this route.")
+    # Unknown confidence is never silently treated as 100%: routes whose recovery depends on
+    # confidence (resale, refurbish) are blocked until inspection is complete or a what-if is supplied.
+    if route != "scrap" and lot.get("inspection_confidence") is None and confidence_override is None:
+        return _blocked(
+            route,
+            f"{label} blocked: inspection is incomplete (confidence unknown). "
+            "Complete the inspection, or set a what-if confidence to explore it.",
+        )
     min_conf = cfg.get("min_inspection_confidence", 0.0)
     if min_conf > 0:
-        if lot.get("inspection_confidence") is None and confidence_override is None:
-            return _blocked(route, f"{label} blocked: inspection is incomplete (confidence unknown).")
         conf_check = _effective_confidence(lot, confidence_override)
         if conf_check < min_conf:
             return _blocked(route, f"{label} blocked: inspection confidence {conf_check:.2f} is below the required {min_conf:.2f}.")
@@ -241,6 +247,8 @@ def allocate_lots(lots: list[dict], assumptions: dict, capacities: dict[str, flo
 
 # ------------------------------------------------------------------ JSON safety
 def _clean(x: Any) -> Any:
+    if isinstance(x, RouteResult):  # also when nested inside dicts or lists
+        x = asdict(x)
     if isinstance(x, float) and not math.isfinite(x):
         return None
     if isinstance(x, dict):
@@ -266,6 +274,8 @@ def break_even_resale_price(lot: dict, assumptions: dict, confidence_override=No
     s = assumptions.get("routes", {}).get("scrap")
     if not r or not s or validate_lot(lot):
         return None
+    if lot.get("inspection_confidence") is None and confidence_override is None:
+        return None  # confidence unknown: no break-even rather than assuming 100%
     conf = _effective_confidence(lot, confidence_override)
     success = r.get("success_rate", 1.0)
     denom = success * conf
