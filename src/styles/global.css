@@ -1,0 +1,224 @@
+
+/* ReCoverIQ — Global Styles */
+
+:root {
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  color: #172544;
+  background: #f6f8fc;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #f6f8fc;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid #a5b4fc;
+  outline-offset: 2px;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* Top navigation */
+
+.app-navigation {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 28px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e9f5;
+}
+
+.app-brand {
+  color: #243b82;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.app-nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.nav-link {
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #4b5878;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.nav-link:hover {
+  background: #f3f5ff;
+  color: #304ffe;
+}
+
+.nav-link.active {
+  background: #eef0ff;
+  border-color: #dce1ff;
+  color: #304ffe;
+}
+
+/* Proposal review panels */
+
+.data-panel {
+  margin-bottom: 22px;
+  padding: 24px;
+  background: #ffffff;
+  border: 1px solid #e3e8f7;
+  border-radius: 14px;
+}
+
+.proposal-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.proposal-form label,
+.proposal-actions label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #354263;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.proposal-form input,
+.proposal-form select,
+.proposal-form textarea,
+.proposal-actions select {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #dce2f1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #172544;
+}
+
+.proposal-form textarea {
+  resize: vertical;
+}
+
+.proposal-form button,
+.proposal-actions button {
+  width: fit-content;
+  padding: 11px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: #5367f5;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.proposal-list-header,
+.proposal-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.proposal-list-header {
+  margin-bottom: 18px;
+}
+
+.proposal-card {
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px solid #e5e9f5;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.proposal-card h3 {
+  margin-top: 0;
+  color: #243b82;
+}
+
+.proposal-card p {
+  color: #596784;
+  overflow-wrap: anywhere;
+}
+
+.proposal-date {
+  font-size: 12px;
+}
+
+.proposal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 160px;
+}
+
+.proposal-actions .secondary-button {
+  background: #ffffff;
+  border: 1px solid #dce2f1;
+  color: #354263;
+}
+
+/* Responsive layout */
+
+@media (max-width: 650px) {
+  .app-navigation {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 16px;
+  }
+
+  .proposal-form {
+    grid-template-columns: 1fr;
+  }
+
+  .proposal-card,
+  .proposal-list-header {
+    flex-direction: column;
+  }
+
+  .proposal-actions {
+    width: 100%;
+  }
+}
