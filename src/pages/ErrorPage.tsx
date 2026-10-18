@@ -1,0 +1,3 @@
+import { AlertTriangle, RotateCcw } from "lucide-react";
+import { Link } from "react-router-dom";
+export default function ErrorPage() { return <div className="center-state"><div className="error-icon"><AlertTriangle size={28} /></div><h1>We couldn't load this view</h1><p>Try again. If the issue continues, check the backend connection or application logs.</p><div className="inline-actions"><button className="button button-secondary" onClick={() => window.location.reload()}><RotateCcw size={16} /> Retry</button><Link className="button button-primary" to="/">Back to overview</Link></div></div>; }
